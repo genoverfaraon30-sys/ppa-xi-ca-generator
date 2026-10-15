@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/dataAdapter";
 
 const YearFilterContext = createContext(null);
 
@@ -9,9 +9,14 @@ export function YearFilterProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const list = await base44.entities.Certificate.list("-created_date", 5000);
-    setRecords(list);
-    setLoading(false);
+    try {
+      const list = await db.entities.Certificate.list("-created_date", 5000);
+      setRecords(list);
+    } catch (err) {
+      setRecords([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

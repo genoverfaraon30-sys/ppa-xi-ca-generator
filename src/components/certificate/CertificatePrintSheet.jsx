@@ -57,18 +57,19 @@ export default function CertificatePrintSheet({ queue }) {
           style={{
             width: PAGE_WIDTH,
             height: PAGE_HEIGHT,
-            display: "flex",
-            flexDirection: "column",
+            display: "block",
             background: "#ffffff",
-            pageBreakAfter: i < pages.length - 1 ? "always" : "auto",
+            overflow: "hidden",
           }}
         >
           <CertificateDocument data={page[0]} height={CERT_HEIGHT} />
-          {page[1] && (
+          {page[1] ? (
             <>
               <CuttingLine />
               <CertificateDocument data={page[1]} height={CERT_HEIGHT} />
             </>
+          ) : (
+            <div style={{ height: `calc(${PAGE_HEIGHT} - ${CERT_HEIGHT})`, width: PAGE_WIDTH }} />
           )}
         </div>
       ))}

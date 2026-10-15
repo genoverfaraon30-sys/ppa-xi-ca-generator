@@ -1,13 +1,15 @@
 import React from "react";
 import { useYearFilter } from "@/lib/YearFilterContext";
 import { Button } from "@/components/ui/button";
-import { DatabaseBackup } from "lucide-react";
+import { DatabaseBackup, LogOut } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { exportCertificatesBackup } from "@/lib/backup";
+import { useAuth } from "@/lib/AuthContext";
 
 export default function LeftYearNav() {
   const { years, selectedYear, setSelectedYear, records } = useYearFilter();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
 
   const handleBackup = () => {
     if (!records.length) {
@@ -16,6 +18,10 @@ export default function LeftYearNav() {
     }
     exportCertificatesBackup(records);
     toast({ title: "Backup downloaded", description: `${records.length} certificate record(s) exported to CSV.` });
+  };
+
+  const handleLogout = async () => {
+    await logout();
   };
 
   const YearButton = ({ label, active, onClick }) => (
@@ -46,6 +52,20 @@ export default function LeftYearNav() {
           <YearButton key={y} label={String(y)} active={selectedYear === y} onClick={() => setSelectedYear(y)} />
         ))}
         {!years.length && <p className="px-2 py-2 text-xs text-slate-400">No records yet.</p>}
+      </div>
+      <div className="border-t border-slate-200 px-3 py-3">
+        {user && (
+          <p className="mb-2 truncate text-xs text-slate-500" title={user.email}>
+            {user.email}
+          </p>
+        )}
+        <Button
+          onClick={handleLogout}
+          variant="outline"
+          className="w-full border-slate-300 text-slate-700 hover:bg-slate-100"
+        >
+          <LogOut className="mr-2 h-4 w-4" /> Log out
+        </Button>
       </div>
     </aside>
   );

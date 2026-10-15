@@ -10,7 +10,7 @@ export default function CertificateDocument({ data, width = "8.5in", height = "6
     <div
       id="certificate-print-area"
       className="cert-sheet bg-white text-black flex flex-col"
-      style={{ width, height, padding: "0.35in 0.5in", fontFamily: "Arial, Helvetica, sans-serif" }}
+      style={{ width, height, padding: "0.35in 0.5in", fontFamily: "Arial, Helvetica, sans-serif", overflow: "hidden" }}
     >
       {data.id && (
         <div className="text-left text-[10pt] font-medium text-black">

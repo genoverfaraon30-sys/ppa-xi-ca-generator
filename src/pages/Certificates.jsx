@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/dataAdapter";
+import { openPrintWindowSync, populatePrintWindow } from "@/lib/printUtils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
@@ -57,9 +58,13 @@ export default function Certificates() {
   const [signatories, setSignatories] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [fieldOffices, setFieldOffices] = useState([]);
+  const [auxLoading, setAuxLoading] = useState(true);
+  const [employeeError, setEmployeeError] = useState(null);
   const [userMap, setUserMap] = useState({});
   const [preview, setPreview] = useState(null);
   const [printQueue, setPrintQueue] = useState([]);
+  const printSheetRef = useRef(null);
+  const pendingPrintWindowRef = useRef(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [saveEmployee, setSaveEmployee] = useState(false);
   const [saveOffice, setSaveOffice] = useState(false);
@@ -75,31 +80,64 @@ export default function Certificates() {
   const [sortDir, setSortDir] = useState("desc");
 
   const loadAux = async () => {
-    const [sigs, emps, offices] = await Promise.all([
-      base44.entities.Signatory.list("-created_date", 10),
-      base44.entities.Employee.list("name", 5000),
-      base44.entities.FieldOffice.list("name", 5000),
+    setAuxLoading(true);
+    setEmployeeError(null);
+
+    const [sigsResult, empsResult, officesResult] = await Promise.allSettled([
+      db.entities.Signatory.list("-created_date", 10),
+      db.entities.Employee.filter({ active: true }, "name", 5000),
+      db.entities.FieldOffice.list("name", 5000),
     ]);
-    setSignatories(sigs);
-    setEmployees(
-      emps
-        .slice()
-        .sort((a, b) =>
-          (a.last_name || lastNameOf(a.name) || "").localeCompare(b.last_name || lastNameOf(b.name) || "")
-        )
-    );
-    setFieldOffices(offices.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+
+    if (sigsResult.status === "fulfilled") setSignatories(sigsResult.value);
+
+    if (empsResult.status === "fulfilled") {
+      setEmployees(
+        empsResult.value
+          .slice()
+          .sort((a, b) =>
+            (a.last_name || lastNameOf(a.name) || "").localeCompare(b.last_name || lastNameOf(b.name) || "")
+          )
+      );
+    } else {
+      setEmployees([]);
+      setEmployeeError(empsResult.reason?.message || "Unable to load employees");
+    }
+
+    if (officesResult.status === "fulfilled") {
+      setFieldOffices(officesResult.value.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+    }
+
     try {
-      const users = await base44.entities.User.list();
+      const users = await db.entities.User.list();
       const map = {};
       users.forEach((u) => { map[u.id] = u.full_name || u.email || ""; });
       setUserMap(map);
     } catch {
       /* non-admin users cannot list users; fall back to id fragment */
     }
+
+    setAuxLoading(false);
   };
 
   useEffect(() => { loadAux(); }, []);
+
+  // After React commits the printQueue to the DOM, copy the rendered content
+  // into the already-open print window. Using useEffect (not rAF) guarantees
+  // the DOM is updated before we read it.
+  useEffect(() => {
+    if (printQueue.length === 0) return;
+    const printWindow = pendingPrintWindowRef.current;
+    if (!printWindow || printWindow.closed) return;
+    // Use rAF inside the effect to wait for the browser to paint the committed DOM
+    const rafId = requestAnimationFrame(() => {
+      if (printSheetRef.current) {
+        populatePrintWindow(printWindow, printSheetRef.current);
+      }
+      pendingPrintWindowRef.current = null;
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [printQueue]);
 
   // records already filtered by selected year from the left navigation
   const records = useMemo(
@@ -204,71 +242,120 @@ export default function Certificates() {
     setSelectedIds((prev) => (prev.length === filteredSorted.length ? [] : filteredSorted.map((r) => r.id)));
 
   const doPrint = (record) => {
+    const printWindow = openPrintWindowSync();
+    if (!printWindow) {
+      toast({ variant: "destructive", title: "Print blocked", description: "Please allow pop-ups for this site to print certificates." });
+      return;
+    }
+    pendingPrintWindowRef.current = printWindow;
     setPrintQueue([record]);
-    setTimeout(() => window.print(), 120);
   };
 
   const doPrintMultiple = (recs) => {
     if (!recs.length) return;
+    const printWindow = openPrintWindowSync();
+    if (!printWindow) {
+      toast({ variant: "destructive", title: "Print blocked", description: "Please allow pop-ups for this site to print certificates." });
+      return;
+    }
+    pendingPrintWindowRef.current = printWindow;
     setPrintQueue(recs);
-    setTimeout(() => window.print(), 120);
   };
 
   const handleSave = async () => {
     if (!validate()) return;
     const payload = { ...data, date_to: data.date_to || data.date_from };
-    if (editingId) {
-      await base44.entities.Certificate.update(editingId, payload);
-    } else {
-      const created = await base44.entities.Certificate.create(payload);
-      await base44.entities.CertificateLog.create({
-        certificate_id: created.id,
-        from_status: "Created",
-        to_status: payload.status || "Draft",
-      });
-    }
-    const exists = signatories.some((s) => s.name === data.signatory_name && s.position === data.signatory_position);
-    if (!exists && data.signatory_name) {
-      await base44.entities.Signatory.create({ name: data.signatory_name, position: data.signatory_position });
-    }
-    if (saveEmployee && data.person_name) {
-      const dup = employees.some((e) => normMatch(e.name) === normMatch(data.person_name));
-      if (!dup) {
-        await base44.entities.Employee.create({
-          name: data.person_name.trim(),
-          position: data.person_position || "",
-          office: data.office || "",
-          active: true,
-        });
+    try {
+      if (editingId) {
+        await db.entities.Certificate.update(editingId, payload);
+      } else {
+        const created = await db.entities.Certificate.create(payload);
+        try {
+          await db.entities.CertificateLog.create({
+            certificate_id: created.id,
+            from_status: "Created",
+            to_status: payload.status || "Draft",
+          });
+        } catch (logErr) {
+          console.warn("CertificateLog insert failed:", logErr);
+        }
       }
-    }
-    if (saveOffice && data.office) {
-      const dup = fieldOffices.some((o) => normMatch(o.name) === normMatch(data.office));
-      if (!dup) {
-        await base44.entities.FieldOffice.create({ name: data.office.trim() });
+      const exists = signatories.some((s) => s.name === data.signatory_name && s.position === data.signatory_position);
+      if (!exists && data.signatory_name) {
+        try {
+          await db.entities.Signatory.create({ name: data.signatory_name, position: data.signatory_position });
+        } catch (auxErr) {
+          console.warn("Signatory save failed:", auxErr);
+        }
       }
+      if (saveEmployee && data.person_name) {
+        const dup = employees.some((e) => normMatch(e.name) === normMatch(data.person_name));
+        if (!dup) {
+          try {
+            await db.entities.Employee.create({
+              name: data.person_name.trim(),
+              position: data.person_position || "",
+              office: data.office || "",
+              active: true,
+            });
+          } catch (auxErr) {
+            console.warn("Employee save failed:", auxErr);
+          }
+        }
+      }
+      if (saveOffice && data.office) {
+        const dup = fieldOffices.some((o) => normMatch(o.name) === normMatch(data.office));
+        if (!dup) {
+          try {
+            await db.entities.FieldOffice.create({ name: data.office.trim() });
+          } catch (auxErr) {
+            console.warn("FieldOffice save failed:", auxErr);
+          }
+        }
+      }
+      await refresh();
+      await loadAux();
+      toast({ title: editingId ? "Certificate updated" : "Certificate saved" });
+      setEditingId(null);
+      setData({ ...EMPTY, location: payload.location });
+      setSaveEmployee(false);
+      setSaveOffice(false);
+      navigate("/history");
+    } catch (err) {
+      console.error("Save failed:", err);
+      const msg = (err.message || "").toLowerCase();
+      let title = "Could not save certificate";
+      let description = err.message || "An unexpected error occurred. Please try again.";
+
+      if (msg.includes("row-level security") || msg.includes("rls") || err.code === "42501") {
+        title = "Permission denied";
+        description = "Your account does not have permission to save certificates. Please contact your administrator to verify database access policies.";
+      } else if (msg.includes("network") || msg.includes("fetch") || msg.includes("failed to fetch")) {
+        title = "Connection error";
+        description = "Could not connect to the server. Please check your internet connection and try again.";
+      } else if (msg.includes("jwt") || msg.includes("token") || msg.includes("session")) {
+        title = "Session expired";
+        description = "Your login session has expired. Please log out and sign in again, then try saving.";
+      } else if (msg.includes("duplicate") || err.code === "23505") {
+        title = "Duplicate record";
+        description = "A certificate with this information already exists.";
+      }
+
+      toast({ variant: "destructive", title, description });
     }
-    await refresh();
-    await loadAux();
-    toast({ title: editingId ? "Certificate updated" : "Certificate saved" });
-    setEditingId(null);
-    setData({ ...EMPTY, location: payload.location });
-    setSaveEmployee(false);
-    setSaveOffice(false);
-    navigate("/history");
   };
 
   const handleDelete = async (r) => {
-    await base44.entities.Certificate.delete(r.id);
+    await db.entities.Certificate.delete(r.id);
     await refresh();
     toast({ title: "Certificate deleted" });
   };
 
   const handleStatusChange = async (r, status) => {
     const prev = r.status || "Draft";
-    await base44.entities.Certificate.update(r.id, { status });
+    await db.entities.Certificate.update(r.id, { status });
     if (prev !== status) {
-      await base44.entities.CertificateLog.create({
+      await db.entities.CertificateLog.create({
         certificate_id: r.id,
         from_status: prev,
         to_status: status,
@@ -344,6 +431,8 @@ export default function Certificates() {
                 onChange={setData}
                 employees={employees}
                 fieldOffices={fieldOffices}
+                employeeLoading={auxLoading}
+                employeeError={employeeError}
                 savedSignatories={signatories}
                 onPickSignatory={(s) => setData({ ...data, signatory_name: s.name, signatory_position: s.position })}
                 saveEmployee={saveEmployee}
@@ -457,7 +546,7 @@ export default function Certificates() {
         </DialogContent>
       </Dialog>
 
-      <div className="print-sheet">
+      <div ref={printSheetRef} className="print-sheet">
         <CertificatePrintSheet queue={printQueue} />
       </div>
     </div>

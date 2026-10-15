@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/dataAdapter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Trash2, AlertTriangle } from "lucide-react";
+import { Trash2, AlertTriangle, LogOut, UserCircle } from "lucide-react";
 import ManageList from "@/components/ManageList";
+import { useAuth } from "@/lib/AuthContext";
 
 export default function Settings() {
   const { toast } = useToast();
+  const { user, logout } = useAuth();
   const [counts, setCounts] = useState({ certs: 0, sigs: 0 });
   const [employees, setEmployees] = useState([]);
   const [fieldOffices, setFieldOffices] = useState([]);
@@ -15,10 +17,10 @@ export default function Settings() {
 
   const load = async () => {
     const [certs, sigs, emps, offices] = await Promise.all([
-      base44.entities.Certificate.list(),
-      base44.entities.Signatory.list(),
-      base44.entities.Employee.list("name", 5000),
-      base44.entities.FieldOffice.list("name", 5000),
+      db.entities.Certificate.list(),
+      db.entities.Signatory.list(),
+      db.entities.Employee.list("name", 5000),
+      db.entities.FieldOffice.list("name", 5000),
     ]);
     setCounts({ certs: certs.length, sigs: sigs.length });
     setEmployees(emps);
@@ -30,7 +32,7 @@ export default function Settings() {
   const wipe = async (entity, label) => {
     setBusy(true);
     try {
-      await base44.entities[entity].deleteMany({});
+      await db.entities[entity].deleteMany({});
       await load();
       toast({ title: `${label} deleted` });
     } finally {
@@ -44,6 +46,21 @@ export default function Settings() {
         <h1 className="font-heading text-3xl font-semibold tracking-tight text-slate-900">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">Manage employee and office lists, and your account data for this app.</p>
       </header>
+
+      <Card className="mb-6">
+        <CardContent className="flex items-center justify-between pt-6">
+          <div className="flex items-center gap-3">
+            <UserCircle className="h-10 w-10 text-slate-400" />
+            <div>
+              <p className="font-medium text-slate-900">{user?.email || "Signed in"}</p>
+              <p className="text-sm text-slate-500">You are signed in to the Certificate of Appearance Generator.</p>
+            </div>
+          </div>
+          <Button variant="outline" onClick={() => logout()} className="border-slate-300 text-slate-700 hover:bg-slate-100">
+            <LogOut className="mr-2 h-4 w-4" /> Log out
+          </Button>
+        </CardContent>
+      </Card>
 
       <div className="space-y-6">
         <ManageList
@@ -106,8 +123,8 @@ export default function Settings() {
                 setBusy(true);
                 try {
                   await Promise.all([
-                    base44.entities.Certificate.deleteMany({}),
-                    base44.entities.Signatory.deleteMany({}),
+                    db.entities.Certificate.deleteMany({}),
+                    db.entities.Signatory.deleteMany({}),
                   ]);
                   await load();
                   toast({ title: "All app data deleted" });

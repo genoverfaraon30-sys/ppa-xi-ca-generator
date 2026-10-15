@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/dataAdapter";
 import moment from "moment";
 
 export default function CertificateStatusLog({ certificateId }) {
@@ -9,7 +9,7 @@ export default function CertificateStatusLog({ certificateId }) {
   useEffect(() => {
     if (!certificateId) return;
     setLoading(true);
-    base44.entities.CertificateLog
+    db.entities.CertificateLog
       .filter({ certificate_id: certificateId }, "-created_date", 100)
       .then(setLogs)
       .finally(() => setLoading(false));

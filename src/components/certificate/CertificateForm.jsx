@@ -25,6 +25,8 @@ export default function CertificateForm({
   setSaveOffice,
   employeeDupWarning,
   officeDupWarning,
+  employeeLoading,
+  employeeError,
 }) {
   const set = (k) => (e) => onChange({ ...data, [k]: e.target.value });
 
@@ -55,12 +57,13 @@ export default function CertificateForm({
             onChange={pickEmployee}
             options={employeeOptions}
             placeholder="Search employee..."
-            emptyText="No employee found — Enter name manually"
+            emptyText={employeeError ? `Error: ${employeeError}` : "No employee found — Enter name manually"}
             manualLabel="+ ADD / ENTER NAME MANUALLY"
             saveLabel="Save this person to Employee Database"
             saveChecked={saveEmployee}
             onSaveToggle={setSaveEmployee}
             duplicateWarning={employeeDupWarning}
+            loading={employeeLoading}
           />
         </Field>
         <Field label="Position / Designation">

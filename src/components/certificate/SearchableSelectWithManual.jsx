@@ -26,6 +26,7 @@ export default function SearchableSelectWithManual({
   onSaveToggle,
   duplicateWarning,
   triggerClassName,
+  loading = false,
 }) {
   const [open, setOpen] = useState(false);
   const [manual, setManual] = useState(false);
@@ -88,7 +89,14 @@ export default function SearchableSelectWithManual({
           aria-expanded={open}
           className={cn("w-full justify-between bg-white text-black font-normal", triggerClassName)}
         >
-          <span className="truncate">{selected ? selected.label : value || placeholder}</span>
+          <span className="truncate">
+            {loading ? (
+              <span className="flex items-center gap-2 text-slate-400">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-slate-400" />
+                Loading...
+              </span>
+            ) : selected ? selected.label : value || placeholder}
+          </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -96,7 +104,7 @@ export default function SearchableSelectWithManual({
         <Command>
           <CommandInput placeholder="Search..." />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{loading ? "Loading employees..." : emptyText}</CommandEmpty>
             <CommandGroup>
               {options.map((o) => (
                 <CommandItem

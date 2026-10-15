@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import moment from "moment";
 import {
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, History as HistoryIcon, BarChart3, Printer } from "lucide-react";
 import { useYearFilter } from "@/lib/YearFilterContext";
 import SummaryPrintSheet from "@/components/certificate/SummaryPrintSheet";
+import { openPrintWindowSync, populatePrintWindow } from "@/lib/printUtils";
 
 const STATUS_COLORS = {
   Issued: "#10b981",
@@ -30,6 +31,8 @@ function yearOf(r) {
 export default function Dashboard() {
   const { records, selectedYear, setSelectedYear, years, loading } = useYearFilter();
   const [summaryQueue, setSummaryQueue] = useState(null);
+  const printSheetRef = useRef(null);
+  const pendingPrintWindowRef = useRef(null);
 
   const totals = useMemo(() => {
     const t = { Draft: 0, Issued: 0, Voided: 0 };
@@ -100,9 +103,24 @@ export default function Dashboard() {
   }, [records, selectedYear]);
 
   const printSummary = () => {
+    const printWindow = openPrintWindowSync();
+    if (!printWindow) return;
+    pendingPrintWindowRef.current = printWindow;
     setSummaryQueue(issuedForSelectedYear);
-    setTimeout(() => window.print(), 150);
   };
+
+  useEffect(() => {
+    if (!summaryQueue) return;
+    const printWindow = pendingPrintWindowRef.current;
+    if (!printWindow || printWindow.closed) return;
+    const rafId = requestAnimationFrame(() => {
+      if (printSheetRef.current) {
+        populatePrintWindow(printWindow, printSheetRef.current);
+      }
+      pendingPrintWindowRef.current = null;
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [summaryQueue]);
 
   const yearLabel = selectedYear == null ? "All Years" : String(selectedYear);
 
@@ -115,7 +133,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12 pb-28 md:pb-12">
+    <div className="no-print mx-auto max-w-5xl px-6 py-12 pb-28 md:pb-12">
       <header className="mb-10">
         <p className="font-semibold uppercase tracking-[0.3em] text-red-600 text-xs">
           Parole and Probation Administration · Regional Office No. XI
@@ -219,7 +237,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="print-sheet">
+      <div ref={printSheetRef} className="print-sheet">
         {summaryQueue && <SummaryPrintSheet records={summaryQueue} yearLabel={yearLabel} />}
       </div>
     </div>

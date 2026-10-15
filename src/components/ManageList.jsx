@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/dataAdapter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ export default function ManageList({ title, description, entityName, records, fi
         const v = (values[f.key] || "").trim();
         if (v) payload[f.key] = v;
       });
-      await base44.entities[entityName].create(payload);
+      await db.entities[entityName].create(payload);
       setValues(Object.fromEntries(fields.map((f) => [f.key, ""])));
       await onReload();
       toast({ title: `${addLabel || title} added` });
@@ -41,7 +41,7 @@ export default function ManageList({ title, description, entityName, records, fi
   const remove = async (r) => {
     setBusy(true);
     try {
-      await base44.entities[entityName].delete(r.id);
+      await db.entities[entityName].delete(r.id);
       await onReload();
       toast({ title: "Entry removed" });
     } finally {
